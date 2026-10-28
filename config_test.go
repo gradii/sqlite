@@ -2,13 +2,12 @@ package sqlite
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 
-	mocksconfig "github.com/goravel/framework/mocks/config"
+	mocksconfig "github.com/gradii/framework/mocks/config"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/goravel/sqlite/contracts"
+	"github.com/gradii/sqlite/contracts"
 )
 
 type ConfigTestSuite struct {
@@ -27,6 +26,7 @@ func TestConfigTestSuite(t *testing.T) {
 func (s *ConfigTestSuite) SetupTest() {
 	s.mockConfig = mocksconfig.NewConfig(s.T())
 	s.config = NewConfig(s.mockConfig, s.connection)
+	s.mockConfig.EXPECT().Get(fmt.Sprintf("database.connections.%s.connector", s.connection)).Return(nil).Maybe()
 }
 
 func (s *ConfigTestSuite) TestReads() {
@@ -42,17 +42,11 @@ func (s *ConfigTestSuite) TestReads() {
 		},
 	}).Once()
 	s.mockConfig.EXPECT().GetString(fmt.Sprintf("database.connections.%s.prefix", s.connection)).Return("goravel_").Once()
-	s.mockConfig.EXPECT().GetBool(fmt.Sprintf("database.connections.%s.singular", s.connection)).Return(false).Once()
-	s.mockConfig.EXPECT().GetBool(fmt.Sprintf("database.connections.%s.no_lower_case", s.connection)).Return(false).Once()
-	s.mockConfig.EXPECT().Get(fmt.Sprintf("database.connections.%s.name_replacer", s.connection)).Return(nil).Once()
 	s.Equal([]contracts.FullConfig{
 		{
-			Connection:   s.connection,
-			Driver:       Name,
-			Prefix:       "goravel_",
-			Singular:     false,
-			NoLowerCase:  false,
-			NameReplacer: nil,
+			Connection: s.connection,
+			Driver:     Name,
+			Prefix:     "goravel_",
 			Config: contracts.Config{
 				Dsn:      "dsn",
 				Database: "forge",
@@ -65,20 +59,14 @@ func (s *ConfigTestSuite) TestWrites() {
 	s.Run("success when configs is empty", func() {
 		s.mockConfig.EXPECT().Get(fmt.Sprintf("database.connections.%s.write", s.connection)).Return(nil).Once()
 		s.mockConfig.EXPECT().GetString(fmt.Sprintf("database.connections.%s.prefix", s.connection)).Return("goravel_").Once()
-		s.mockConfig.EXPECT().GetBool(fmt.Sprintf("database.connections.%s.singular", s.connection)).Return(false).Once()
-		s.mockConfig.EXPECT().GetBool(fmt.Sprintf("database.connections.%s.no_lower_case", s.connection)).Return(false).Once()
-		s.mockConfig.EXPECT().Get(fmt.Sprintf("database.connections.%s.name_replacer", s.connection)).Return(nil).Once()
 		s.mockConfig.EXPECT().GetString(fmt.Sprintf("database.connections.%s.dsn", s.connection)).Return("dsn").Once()
 		s.mockConfig.EXPECT().GetString(fmt.Sprintf("database.connections.%s.database", s.connection)).Return("forge").Once()
 
 		s.Equal([]contracts.FullConfig{
 			{
-				Connection:   s.connection,
-				Driver:       Name,
-				Prefix:       "goravel_",
-				Singular:     false,
-				NoLowerCase:  false,
-				NameReplacer: nil,
+				Connection: s.connection,
+				Driver:     Name,
+				Prefix:     "goravel_",
 				Config: contracts.Config{
 					Dsn:      "dsn",
 					Database: "forge",
@@ -94,19 +82,13 @@ func (s *ConfigTestSuite) TestWrites() {
 			},
 		}).Once()
 		s.mockConfig.EXPECT().GetString(fmt.Sprintf("database.connections.%s.prefix", s.connection)).Return("goravel_").Once()
-		s.mockConfig.EXPECT().GetBool(fmt.Sprintf("database.connections.%s.singular", s.connection)).Return(false).Once()
-		s.mockConfig.EXPECT().GetBool(fmt.Sprintf("database.connections.%s.no_lower_case", s.connection)).Return(false).Once()
-		s.mockConfig.EXPECT().Get(fmt.Sprintf("database.connections.%s.name_replacer", s.connection)).Return(nil).Once()
 		s.mockConfig.EXPECT().GetString(fmt.Sprintf("database.connections.%s.dsn", s.connection)).Return("dsn").Once()
 
 		s.Equal([]contracts.FullConfig{
 			{
-				Connection:   s.connection,
-				Driver:       Name,
-				Prefix:       "goravel_",
-				Singular:     false,
-				NoLowerCase:  false,
-				NameReplacer: nil,
+				Connection: s.connection,
+				Driver:     Name,
+				Prefix:     "goravel_",
 				Config: contracts.Config{
 					Dsn:      "dsn",
 					Database: "forge",
@@ -120,8 +102,6 @@ func (s *ConfigTestSuite) TestFillDefault() {
 	dsn := "dsn"
 	database := "forge"
 	prefix := "goravel_"
-	singular := false
-	nameReplacer := strings.NewReplacer("a", "b")
 
 	tests := []struct {
 		name          string
@@ -139,20 +119,14 @@ func (s *ConfigTestSuite) TestFillDefault() {
 			configs: []contracts.Config{{}},
 			setup: func() {
 				s.mockConfig.EXPECT().GetString(fmt.Sprintf("database.connections.%s.prefix", s.connection)).Return(prefix).Once()
-				s.mockConfig.EXPECT().GetBool(fmt.Sprintf("database.connections.%s.singular", s.connection)).Return(singular).Once()
-				s.mockConfig.EXPECT().GetBool(fmt.Sprintf("database.connections.%s.no_lower_case", s.connection)).Return(true).Once()
-				s.mockConfig.EXPECT().Get(fmt.Sprintf("database.connections.%s.name_replacer", s.connection)).Return(nameReplacer).Once()
 				s.mockConfig.EXPECT().GetString(fmt.Sprintf("database.connections.%s.dsn", s.connection)).Return(dsn).Once()
 				s.mockConfig.EXPECT().GetString(fmt.Sprintf("database.connections.%s.database", s.connection)).Return(database).Once()
 			},
 			expectConfigs: []contracts.FullConfig{
 				{
-					Connection:   s.connection,
-					Driver:       Name,
-					Prefix:       prefix,
-					Singular:     singular,
-					NoLowerCase:  true,
-					NameReplacer: nameReplacer,
+					Connection: s.connection,
+					Driver:     Name,
+					Prefix:     prefix,
 					Config: contracts.Config{
 						Dsn:      dsn,
 						Database: database,
@@ -170,18 +144,12 @@ func (s *ConfigTestSuite) TestFillDefault() {
 			},
 			setup: func() {
 				s.mockConfig.EXPECT().GetString(fmt.Sprintf("database.connections.%s.prefix", s.connection)).Return(prefix).Once()
-				s.mockConfig.EXPECT().GetBool(fmt.Sprintf("database.connections.%s.singular", s.connection)).Return(singular).Once()
-				s.mockConfig.EXPECT().GetBool(fmt.Sprintf("database.connections.%s.no_lower_case", s.connection)).Return(true).Once()
-				s.mockConfig.EXPECT().Get(fmt.Sprintf("database.connections.%s.name_replacer", s.connection)).Return(nameReplacer).Once()
 			},
 			expectConfigs: []contracts.FullConfig{
 				{
-					Connection:   s.connection,
-					Driver:       Name,
-					Prefix:       prefix,
-					Singular:     singular,
-					NoLowerCase:  true,
-					NameReplacer: nameReplacer,
+					Connection: s.connection,
+					Driver:     Name,
+					Prefix:     prefix,
 					Config: contracts.Config{
 						Dsn:      dsn,
 						Database: database,

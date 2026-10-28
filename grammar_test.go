@@ -3,19 +3,19 @@ package sqlite
 import (
 	"testing"
 
-	contractsdriver "github.com/goravel/framework/contracts/database/driver"
-	databasedb "github.com/goravel/framework/database/db"
-	"github.com/goravel/framework/foundation/json"
-	mocksdriver "github.com/goravel/framework/mocks/database/driver"
-	mocksfoundation "github.com/goravel/framework/mocks/foundation"
-	mockslog "github.com/goravel/framework/mocks/log"
+	contractsdriver "github.com/gradii/framework/contracts/database/driver"
+	databasedb "github.com/gradii/framework/database/db"
+	"github.com/gradii/framework/foundation/json"
+	mocksdriver "github.com/gradii/framework/mocks/database/driver"
+	mocksfoundation "github.com/gradii/framework/mocks/foundation"
+	mockslog "github.com/gradii/framework/mocks/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
 
 type GrammarSuite struct {
 	suite.Suite
-	grammar *Grammar
+	grammar *SchemaGrammar
 	mockLog *mockslog.Log
 }
 
@@ -25,7 +25,7 @@ func TestGrammarSuite(t *testing.T) {
 
 func (s *GrammarSuite) SetupTest() {
 	s.mockLog = mockslog.NewLog(s.T())
-	s.grammar = NewGrammar(s.mockLog, "goravel_")
+	s.grammar = NewSchemaGrammar(s.mockLog, "goravel_")
 }
 
 func (s *GrammarSuite) TestAddForeignKeys() {
@@ -437,7 +437,7 @@ func (s *GrammarSuite) TestCompileRenameIndex() {
 				},
 			},
 			setup: func() {
-				mockBlueprint.EXPECT().GetTableName().Return("users").Once()
+				mockBlueprint.EXPECT().GetTableName().Return("users").Twice()
 			},
 			expect: []string{
 				`drop index "users"`,
@@ -457,7 +457,7 @@ func (s *GrammarSuite) TestCompileRenameIndex() {
 				},
 			},
 			setup: func() {
-				mockBlueprint.EXPECT().GetTableName().Return("users").Once()
+				mockBlueprint.EXPECT().GetTableName().Return("users").Twice()
 			},
 			expect: []string{
 				`drop index "users"`,

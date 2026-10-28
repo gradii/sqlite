@@ -1,17 +1,16 @@
 package facades
 
 import (
-	"fmt"
+	"github.com/gradii/framework/contracts/database/driver"
 
-	"github.com/goravel/framework/contracts/database/driver"
-
-	"github.com/goravel/sqlite"
+	"github.com/gradii/sqlite"
+	sqliteerrors "github.com/gradii/sqlite/errors"
 )
 
 func Sqlite(connection string) (driver.Driver, error) {
 	if sqlite.App == nil {
 
-		return nil, fmt.Errorf("please register sqlite service provider")
+		return nil, sqliteerrors.ServiceProviderNotRegistered
 	}
 
 	instance, err := sqlite.App.MakeWith(sqlite.Binding, map[string]any{

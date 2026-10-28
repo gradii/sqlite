@@ -3,7 +3,7 @@ disable-version-string: True
 all: True
 recursive: true
 packages:
-  github.com/goravel/sqlite/contracts:
+  github.com/gradii/sqlite/contracts:
     config:
       dir: mocks/{{replaceAll .InterfaceDirRelative "contracts" ""}}
       filename: "{{.InterfaceName}}.go"

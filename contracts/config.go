@@ -1,7 +1,8 @@
 package contracts
 
 import (
-	contractsconfig "github.com/goravel/framework/contracts/config"
+	"database/sql/driver"
+	contractsconfig "github.com/gradii/framework/contracts/config"
 )
 
 type ConfigBuilder interface {
@@ -18,17 +19,15 @@ type Replacer interface {
 
 // Config Used in config/database.go
 type Config struct {
-	Dsn      string
-	Database string
+	Connector driver.Connector
+	Dsn       string
+	Database  string
 }
 
 // FullConfig Fill the default value for Config
 type FullConfig struct {
 	Config
-	Connection   string
-	Driver       string
-	NameReplacer Replacer
-	NoLowerCase  bool
-	Prefix       string
-	Singular     bool
+	Connection string
+	Driver     string
+	Prefix     string
 }

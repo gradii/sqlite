@@ -1,8 +1,6 @@
 package sqlite
 
-import "github.com/goravel/framework/errors"
+import sqliteerrors "github.com/gradii/sqlite/errors"
 
-var (
-	FailedToGenerateDSN = errors.New("failed to generate DSN, please check the database configuration")
-	ConfigNotFound      = errors.New("not found database configuration")
-)
+var FailedToGenerateDSN = sqliteerrors.FailedToGenerateDSN
+var ConfigNotFound = sqliteerrors.ConfigNotFound

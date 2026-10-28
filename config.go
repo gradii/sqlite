@@ -1,11 +1,12 @@
 package sqlite
 
 import (
+	sqldriver "database/sql/driver"
 	"fmt"
 
-	"github.com/goravel/framework/contracts/config"
+	"github.com/gradii/framework/contracts/config"
 
-	"github.com/goravel/sqlite/contracts"
+	"github.com/gradii/sqlite/contracts"
 )
 
 type Config struct {
@@ -55,19 +56,15 @@ func (r *Config) fillDefault(configs []contracts.Config) []contracts.FullConfig 
 	var fullConfigs []contracts.FullConfig
 	for _, config := range configs {
 		fullConfig := contracts.FullConfig{
-			Config:      config,
-			Connection:  r.connection,
-			Driver:      Name,
-			NoLowerCase: r.config.GetBool(fmt.Sprintf("database.connections.%s.no_lower_case", r.connection)),
-			Prefix:      r.config.GetString(fmt.Sprintf("database.connections.%s.prefix", r.connection)),
-			Singular:    r.config.GetBool(fmt.Sprintf("database.connections.%s.singular", r.connection)),
-		}
-		if nameReplacer := r.config.Get(fmt.Sprintf("database.connections.%s.name_replacer", r.connection)); nameReplacer != nil {
-			if replacer, ok := nameReplacer.(contracts.Replacer); ok {
-				fullConfig.NameReplacer = replacer
-			}
+			Config:     config,
+			Connection: r.connection,
+			Driver:     Name,
+			Prefix:     r.config.GetString(fmt.Sprintf("database.connections.%s.prefix", r.connection)),
 		}
 
+		if fullConfig.Connector == nil {
+			fullConfig.Connector, _ = r.config.Get(fmt.Sprintf("database.connections.%s.connector", r.connection)).(sqldriver.Connector)
+		}
 		// If read or write is empty, use the default config
 		if fullConfig.Dsn == "" {
 			fullConfig.Dsn = r.config.GetString(fmt.Sprintf("database.connections.%s.dsn", r.connection))
