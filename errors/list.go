@@ -7,4 +7,6 @@ var (
 	FailedToGenerateDSN          = errors.New("failed to generate DSN, please check the database configuration")
 	DockerNotSupported           = errors.New("SQLite Docker helpers are not part of the runtime driver")
 	ServiceProviderNotRegistered = errors.New("please register sqlite service provider")
+	SchemaIndexNotFound          = errors.New("index %s does not exist on table %s")
+	SchemaIndexAlreadyExists     = errors.New("index %s already exists on table %s")
 )

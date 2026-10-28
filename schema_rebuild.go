@@ -286,6 +286,9 @@ func sqliteRename(sql string, renames map[string]string) string {
 		if !token.identifier {
 			continue
 		}
+		if i > 0 && !tokens[i-1].quoted && strings.EqualFold(tokens[i-1].value, "constraint") {
+			continue
+		}
 		replacement, ok := renames[strings.ToLower(token.value)]
 		if !ok {
 			continue
@@ -327,7 +330,7 @@ func sqliteRebuild(b driver.Blueprint) bool {
 	return false
 }
 
-func (r *SchemaGrammar) compileSQLiteRebuild(blueprint driver.Blueprint, catalog driver.SchemaCatalog) ([]string, error) {
+func (r *SchemaGrammar) compileSQLiteRebuild(blueprint driver.Blueprint, catalog driver.SchemaCatalog) ([]driver.SchemaStatement, error) {
 	for _, command := range blueprint.GetCommands() {
 		if command.Name == schema.CommandDropForeign && len(command.Columns) == 0 {
 			return nil, errors.SchemaDropForeignByNameNotSupported
@@ -362,7 +365,6 @@ func (r *SchemaGrammar) compileSQLiteRebuild(blueprint driver.Blueprint, catalog
 	dropped := map[string]bool{}
 	renames := map[string]string{}
 	changed := map[string]driver.ColumnDefinition{}
-	removedIndexes := map[string]bool{}
 	dropPrimary := false
 	finalTable := table
 	var addedForeign []*driver.Command
@@ -382,8 +384,6 @@ func (r *SchemaGrammar) compileSQLiteRebuild(blueprint driver.Blueprint, catalog
 			renames[strings.ToLower(command.From)] = command.To
 		case schema.CommandRename:
 			finalTable = r.prefix + command.To
-		case schema.CommandDropIndex, schema.CommandDropUnique, schema.CommandDropFullText, "dropSpatialIndex":
-			removedIndexes[strings.ToLower(command.Index)] = true
 		case schema.CommandDropPrimary:
 			dropPrimary = true
 		case schema.CommandPrimary:
@@ -439,16 +439,7 @@ func (r *SchemaGrammar) compileSQLiteRebuild(blueprint driver.Blueprint, catalog
 			}
 			if !remove {
 				if kind == "foreign" {
-					// Foreign target column names belong to the referenced table.
-					tokens := sqliteTokens(part)
-					split := len(part)
-					for _, token := range tokens {
-						if !token.quoted && strings.EqualFold(token.value, "references") {
-							split = token.start
-							break
-						}
-					}
-					part = sqliteRename(part[:split], renames) + part[split:]
+					part = sqliteRenameForeign(part, table, finalTable, renames)
 				} else {
 					part = sqliteRename(part, renames)
 				}
@@ -504,6 +495,8 @@ func (r *SchemaGrammar) compileSQLiteRebuild(blueprint driver.Blueprint, catalog
 				retained := part[constraint.start:constraint.end]
 				if constraint.kind == "check" {
 					retained = sqliteRename(retained, renames)
+				} else if constraint.kind == "references" {
+					retained = sqliteRenameForeign(retained, table, finalTable, renames)
 				}
 				definition += " " + retained
 			}
@@ -514,7 +507,7 @@ func (r *SchemaGrammar) compileSQLiteRebuild(blueprint driver.Blueprint, catalog
 					part = sqliteRemoveConstraint(part, inline[i])
 				}
 			}
-			part = sqliteRename(part, renames)
+			part = sqliteRenameColumnDefinition(part, table, finalTable, renames)
 		}
 
 		definitions = append(definitions, part)
@@ -570,31 +563,15 @@ func (r *SchemaGrammar) compileSQLiteRebuild(blueprint driver.Blueprint, catalog
 		"drop table " + qualified(table),
 		"alter table " + qualified(temporary) + " rename to " + quoteSchemaIdentifier(finalTable),
 	}
+	indexes, err := r.sqliteRebuildIndexes(blueprint, objects, namespace, finalTable, renames, dropped)
+	if err != nil {
+		return nil, err
+	}
+	statements = append(statements, indexes...)
 	for _, object := range objects {
-		name, _ := object["name"].(string)
-		sql, _ := object["sql"].(string)
-		kind, _ := object["type"].(string)
-		if removedIndexes[strings.ToLower(name)] {
-			continue
-		}
-		tokens := sqliteTokens(sql)
-		if kind == "index" {
-			open := -1
-			for _, token := range tokens {
-				if !token.quoted && token.value == "(" {
-					open = token.start
-					break
-				}
-			}
-			if open < 0 || sqliteReferences(sql[open:], dropped) {
-				continue
-			}
-			unique := ""
-			if len(tokens) > 1 && strings.EqualFold(tokens[1].value, "unique") {
-				unique = "unique "
-			}
-			statements = append(statements, "create "+unique+"index "+qualified(name)+" on "+quoteSchemaIdentifier(finalTable)+" "+sqliteRename(sql[open:], renames))
-		} else {
+		if object["type"] == "trigger" {
+			name, _ := object["name"].(string)
+			sql, _ := object["sql"].(string)
 			statement, keep := sqliteTrigger(sql, table, finalTable, renames, dropped)
 			if keep {
 				// sqlite_master omits the attachment qualifier from trigger SQL.
@@ -616,23 +593,20 @@ func (r *SchemaGrammar) compileSQLiteRebuild(blueprint driver.Blueprint, catalog
 			}
 		}
 	}
-	for _, command := range blueprint.GetCommands() {
-		switch command.Name {
-		case schema.CommandIndex:
-			statements = append(statements, r.CompileIndex(blueprint, command))
-		case schema.CommandUnique:
-			statements = append(statements, r.CompileUnique(blueprint, command))
-		case "rawIndex":
-			compiled, _, err := r.CompileSchemaCommand(blueprint, command)
-			if err != nil {
-				return nil, err
-			}
-			for _, statement := range compiled {
-				statements = append(statements, statement.SQL)
-			}
-		}
+	result := make([]driver.SchemaStatement, 0, len(statements))
+	for _, sql := range statements {
+		result = append(result, driver.SchemaStatement{SQL: sql})
 	}
-	return statements, nil
+	sequence, err := sqliteRebuildSequence(catalog, namespace, table, finalTable, create, definitions)
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, sequence...)
+	views, err := sqliteRebuildViews(catalog, namespace, table)
+	if err != nil {
+		return nil, err
+	}
+	return append(result, views...), nil
 }
 func equalDDLColumns(a, b []string) bool {
 	if len(a) != len(b) {

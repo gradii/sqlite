@@ -5,6 +5,7 @@ import (
 	"github.com/gradii/framework/contracts/database/driver"
 	"github.com/gradii/framework/database/schema"
 	"github.com/gradii/framework/errors"
+	"github.com/spf13/cast"
 	"strings"
 )
 
@@ -152,7 +153,21 @@ func (r *SchemaGrammar) sqliteForeignDefinition(command *driver.Command) string 
 	return sql
 }
 func (r *SchemaGrammar) SchemaExecutionPolicy(blueprint driver.Blueprint) driver.SchemaExecutionPolicy {
-	return driver.SchemaExecutionPolicy{Transactional: true, DisableForeignKeys: blueprint != nil && sqliteRebuild(blueprint), ForeignKeysOutsideTransaction: true}
+	rebuild := blueprint != nil && sqliteRebuild(blueprint)
+	policy := driver.SchemaExecutionPolicy{Transactional: true, NestedTransaction: rebuild, DisableForeignKeys: rebuild, ForeignKeysOutsideTransaction: true}
+	if rebuild {
+		policy.SessionSettings = []driver.SchemaSessionSetting{{
+			Read: driver.SchemaStatement{SQL: "pragma legacy_alter_table"}, Value: true,
+			Compile: func(value any) driver.SchemaStatement {
+				sql := "pragma legacy_alter_table = OFF"
+				if cast.ToBool(value) {
+					sql = "pragma legacy_alter_table = ON"
+				}
+				return driver.SchemaStatement{SQL: sql}
+			},
+		}}
+	}
+	return policy
 }
 func (r *SchemaGrammar) CompileSchemaBlueprint(blueprint driver.Blueprint, catalog driver.SchemaCatalog) ([]driver.SchemaStatement, bool, error) {
 	if !sqliteRebuild(blueprint) {
@@ -161,10 +176,6 @@ func (r *SchemaGrammar) CompileSchemaBlueprint(blueprint driver.Blueprint, catal
 	if catalog == nil {
 		return nil, true, errors.DatabaseConnectionIsNil
 	}
-	sqls, err := r.compileSQLiteRebuild(blueprint, catalog)
-	var statements []driver.SchemaStatement
-	for _, sql := range sqls {
-		statements = append(statements, driver.SchemaStatement{SQL: sql})
-	}
+	statements, err := r.compileSQLiteRebuild(blueprint, catalog)
 	return statements, true, err
 }

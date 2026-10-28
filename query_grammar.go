@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"maps"
 	"regexp"
 	"strings"
 
@@ -401,10 +402,11 @@ type jsonPathUpdates struct{ Values core.UpdateValues }
 var arrayUpdatePath = regexp.MustCompile(`\[[0-9]+\]`)
 
 func (g *QueryGrammar) groupJsonColumnsForUpdate(values core.UpdateValues) []core.UpdateValue {
-	arrayColumns := make(map[string]bool)
+	pathColumns := make(map[string]bool)
 	for _, value := range values {
-		if g.IsJsonSelector(value.Column) && arrayUpdatePath.MatchString(value.Column) {
-			arrayColumns[sqliteJsonGroupPath(value.Column)[0]] = true
+		_, subquery := value.Value.(core.SubQueryBindings)
+		if g.IsJsonSelector(value.Column) && (arrayUpdatePath.MatchString(value.Column) || core.IsExpression(value.Value) || subquery) {
+			pathColumns[sqliteJsonGroupPath(value.Column)[0]] = true
 		}
 	}
 	var groups []core.UpdateValue
@@ -416,7 +418,7 @@ func (g *QueryGrammar) groupJsonColumnsForUpdate(values core.UpdateValues) []cor
 		}
 
 		path := sqliteJsonGroupPath(value.Column)
-		if arrayColumns[path[0]] {
+		if pathColumns[path[0]] {
 			if i, ok := index[path[0]]; ok {
 				group := groups[i].Value.(jsonPathUpdates)
 				group.Values = append(group.Values, value)
@@ -458,10 +460,14 @@ func setNestedGroup(target map[string]any, segments []string, value any) map[str
 	current := target
 	for i := 0; i < last; i++ {
 		next, ok := current[segments[i]].(map[string]any)
-		if !ok {
+		if !ok || next == nil {
 			next = map[string]any{}
-			current[segments[i]] = next
+		} else {
+			// A preceding assignment may have supplied this object directly. Grouping another
+			// nested path must not mutate the caller's map while constructing the patch.
+			next = maps.Clone(next)
 		}
+		current[segments[i]] = next
 		current = next
 	}
 
