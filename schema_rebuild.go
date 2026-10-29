@@ -513,9 +513,10 @@ func (r *SchemaGrammar) compileSQLiteRebuild(blueprint driver.Blueprint, catalog
 					continue
 				}
 				retained := part[constraint.start:constraint.end]
-				if constraint.kind == "check" {
+				switch constraint.kind {
+				case "check":
 					retained = sqliteRename(retained, renames)
-				} else if constraint.kind == "references" {
+				case "references":
 					retained = sqliteRenameForeign(retained, table, finalTable, renames)
 				}
 				definition += " " + retained

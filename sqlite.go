@@ -41,9 +41,3 @@ func (r *Sqlite) fullConfigsToConfigs(fullConfigs []contracts.FullConfig) []data
 	}
 	return configs
 }
-func dsn(config contracts.FullConfig) string {
-	if config.Dsn != "" {
-		return config.Dsn
-	}
-	return config.Database
-}

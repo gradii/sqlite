@@ -69,9 +69,10 @@ func sqliteRenameColumnDefinition(sql, table, finalTable string, renames map[str
 		if token.quoted {
 			continue
 		}
-		if token.value == "(" {
+		switch token.value {
+		case "(":
 			depth++
-		} else if token.value == ")" {
+		case ")":
 			depth--
 		}
 		if depth != 0 || (!strings.EqualFold(token.value, "check") && !strings.EqualFold(token.value, "as")) || tokens[i+1].value != "(" {
@@ -80,9 +81,10 @@ func sqliteRenameColumnDefinition(sql, table, finalTable string, renames map[str
 		level := 1
 		for j := i + 2; j < len(tokens); j++ {
 			if !tokens[j].quoted {
-				if tokens[j].value == "(" {
+				switch tokens[j].value {
+				case "(":
 					level++
-				} else if tokens[j].value == ")" {
+				case ")":
 					level--
 				}
 			}
