@@ -49,7 +49,7 @@ For sibling checkouts, create an ignored local workspace:
 
 ```sh
 go work init . ../goravel-framework
-go work edit -replace=github.com/gradii/framework@v1.18.0=../goravel-framework
+go work edit -replace=github.com/gradii/framework@v1.20.0-alpha.0=../goravel-framework
 go test -race ./...
 ```
 

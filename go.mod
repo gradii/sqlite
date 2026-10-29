@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/Masterminds/squirrel v1.5.4
-	github.com/gradii/framework v1.18.0
+	github.com/gradii/framework v1.20.0-alpha.0
 	github.com/ncruces/go-sqlite3 v0.35.5
 	github.com/spf13/cast v1.10.0
 	github.com/stretchr/testify v1.12.1
