@@ -312,6 +312,23 @@ func sqliteReferences(sql string, names map[string]bool) bool {
 	}
 	return false
 }
+
+// sqliteDiscardedColumns reports the columns that no longer resolve after the rebuild: the ones this
+// migration drops and does not add again under the same name. A re-added column is present in the
+// rebuilt table, so the indexes, constraints and triggers that name it stay valid.
+func sqliteDiscardedColumns(blueprint driver.Blueprint, dropped map[string]bool) map[string]bool {
+	discarded := make(map[string]bool, len(dropped))
+	for name := range dropped {
+		discarded[name] = true
+	}
+	for _, column := range blueprint.GetAddedColumns() {
+		if !column.IsChange() {
+			delete(discarded, strings.ToLower(column.GetName()))
+		}
+	}
+	return discarded
+}
+
 func sqliteRebuild(b driver.Blueprint) bool {
 	if b.HasCommand(schema.CommandCreate) {
 		return false
@@ -393,6 +410,9 @@ func (r *SchemaGrammar) compileSQLiteRebuild(blueprint driver.Blueprint, catalog
 			addedForeign = append(addedForeign, command)
 		}
 	}
+	// Columns this migration drops and does not add again no longer resolve after the rebuild, so the
+	// constraints, indexes and triggers that name them are the ones that have to be discarded.
+	discarded := sqliteDiscardedColumns(blueprint, dropped)
 
 	var definitions, constraints []string
 	existing := make(map[string]bool, len(columns))
@@ -419,11 +439,11 @@ func (r *SchemaGrammar) compileSQLiteRebuild(blueprint driver.Blueprint, catalog
 		if kind != "" {
 			remove := kind == "primary" && dropPrimary
 			for _, column := range localColumns {
-				if dropped[strings.ToLower(column)] {
+				if discarded[strings.ToLower(column)] {
 					remove = true
 				}
 			}
-			if kind == "check" && sqliteReferences(part, dropped) {
+			if kind == "check" && sqliteReferences(part, discarded) {
 				remove = true
 			}
 			for _, command := range blueprint.GetCommands() {
@@ -461,7 +481,7 @@ func (r *SchemaGrammar) compileSQLiteRebuild(blueprint driver.Blueprint, catalog
 			if constraint.kind == "primary" && dropPrimary {
 				remove[i] = true
 			}
-			if constraint.kind == "check" && sqliteReferences(part[constraint.start:constraint.end], dropped) {
+			if constraint.kind == "check" && sqliteReferences(part[constraint.start:constraint.end], discarded) {
 				remove[i] = true
 			}
 			if constraint.kind == "references" {
@@ -573,6 +593,11 @@ func (r *SchemaGrammar) compileSQLiteRebuild(blueprint driver.Blueprint, catalog
 			name, _ := object["name"].(string)
 			sql, _ := object["sql"].(string)
 			statement, keep := sqliteTrigger(sql, table, finalTable, renames, dropped)
+			if !keep {
+				// The trigger names a column this migration drops, so it cannot be rewritten. Dropping
+				// it silently would report a successful rebuild with the trigger gone.
+				return nil, errors.SchemaSQLiteTriggerDependencyInvalid.Args(name, table)
+			}
 			if keep {
 				// sqlite_master omits the attachment qualifier from trigger SQL.
 				tokens := sqliteTokens(statement)
@@ -602,7 +627,7 @@ func (r *SchemaGrammar) compileSQLiteRebuild(blueprint driver.Blueprint, catalog
 		return nil, err
 	}
 	result = append(result, sequence...)
-	views, err := sqliteRebuildViews(catalog, namespace, table)
+	views, err := sqliteRebuildViews(catalog, namespace, table, discarded)
 	if err != nil {
 		return nil, err
 	}

@@ -6,6 +6,7 @@ import (
 
 	"github.com/gradii/framework/contracts/database/driver"
 	"github.com/gradii/framework/database/schema"
+	frameworkerrors "github.com/gradii/framework/errors"
 	sqliteerrors "github.com/gradii/sqlite/errors"
 )
 
@@ -105,7 +106,11 @@ func sqliteRenameColumnDefinition(sql, table, finalTable string, renames map[str
 	return out.String()
 }
 
-type sqliteRebuildIndex struct{ name, sql string }
+type sqliteRebuildIndex struct {
+	name     string
+	sql      string
+	declared bool
+}
 
 func (r *SchemaGrammar) sqliteRebuildIndexes(blueprint driver.Blueprint, objects []map[string]any, namespace, table string, renames map[string]string, dropped map[string]bool) ([]string, error) {
 	var indexes []sqliteRebuildIndex
@@ -113,7 +118,7 @@ func (r *SchemaGrammar) sqliteRebuildIndexes(blueprint driver.Blueprint, objects
 		if object["type"] == "index" {
 			name, _ := object["name"].(string)
 			sql, _ := object["sql"].(string)
-			indexes = append(indexes, sqliteRebuildIndex{name, sql})
+			indexes = append(indexes, sqliteRebuildIndex{name: name, sql: sql})
 		}
 	}
 	find := func(name string) int {
@@ -144,9 +149,13 @@ func (r *SchemaGrammar) sqliteRebuildIndexes(blueprint driver.Blueprint, objects
 				return nil, sqliteerrors.SchemaIndexAlreadyExists.Args(command.Index, blueprint.GetTableName())
 			}
 			sql := r.compileSchemaIndex(blueprint, command, command.Name == schema.CommandUnique)
-			indexes = append(indexes, sqliteRebuildIndex{command.Index, sql})
+			indexes = append(indexes, sqliteRebuildIndex{name: command.Index, sql: sql, declared: true})
 		}
 	}
+	// An index is discarded only when it names a column that no longer resolves after the rebuild; an
+	// index this migration declares is emitted unconditionally.
+	discarded := sqliteDiscardedColumns(blueprint, dropped)
+
 	var statements []string
 	for _, index := range indexes {
 		tokens := sqliteTokens(index.sql)
@@ -154,7 +163,7 @@ func (r *SchemaGrammar) sqliteRebuildIndexes(blueprint driver.Blueprint, objects
 			if token.quoted || token.value != "(" {
 				continue
 			}
-			if sqliteReferences(index.sql[token.start:], dropped) {
+			if !index.declared && sqliteReferences(index.sql[token.start:], discarded) {
 				break
 			}
 			unique := ""
@@ -195,7 +204,7 @@ func sqliteRebuildSequence(catalog driver.SchemaCatalog, namespace, table, final
 
 // Keep view definitions and their INSTEAD OF triggers intact. Validate direct
 // and transitive dependants after the name handoff, before committing the rebuild.
-func sqliteRebuildViews(catalog driver.SchemaCatalog, namespace, table string) ([]driver.SchemaStatement, error) {
+func sqliteRebuildViews(catalog driver.SchemaCatalog, namespace, table string, discarded map[string]bool) ([]driver.SchemaStatement, error) {
 	type view struct{ namespace, name, sql string }
 	var views []view
 	namespaces := []string{namespace}
@@ -226,9 +235,27 @@ func sqliteRebuildViews(catalog driver.SchemaCatalog, namespace, table string) (
 	}
 	var statements []driver.SchemaStatement
 	for i, view := range views {
-		if selected[i] {
-			statements = append(statements, driver.SchemaStatement{SQL: "select * from " + quoteSchemaIdentifier(view.namespace) + "." + quoteSchemaIdentifier(view.name) + " limit 0", ReadOnly: true})
+		if !selected[i] {
+			continue
 		}
+		// A trigger attached to a view carries the view's name in tbl_name, so it is not part of the
+		// table's own object set and its write dependency has to be checked here: a SELECT prepare
+		// cannot exercise it, and a body naming a column that no longer resolves cannot be carried over.
+		triggers, err := catalog.Select(driver.SchemaStatement{
+			SQL:      "select name, sql from " + quoteSchemaIdentifier(view.namespace) + ".sqlite_master where type = 'trigger' and tbl_name = ? and sql is not null order by name",
+			Bindings: []any{view.name},
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, trigger := range triggers {
+			name, _ := trigger["name"].(string)
+			definition, _ := trigger["sql"].(string)
+			if sqliteReferences(definition, discarded) {
+				return nil, frameworkerrors.SchemaSQLiteTriggerDependencyInvalid.Args(name, table)
+			}
+		}
+		statements = append(statements, driver.SchemaStatement{SQL: "select * from " + quoteSchemaIdentifier(view.namespace) + "." + quoteSchemaIdentifier(view.name) + " limit 0", ReadOnly: true})
 	}
 	return statements, nil
 }
